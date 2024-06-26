@@ -5,3 +5,4 @@ KET_TTS는 JETS 모델 기반 End-to-End 음성합성 toolkit입니다. 모델�
 
 ## KEP TTS 모델 구축 방법
 - 참조: https://wiki.daumkakao.com/display/~soya.j/KEP+TTS
+# kep4
