@@ -3,7 +3,7 @@
 
 ################## KAKAO ####################
 KAKAO_RYAN=/workspace/fs_soya_db/kakao/Ryan
-KAKAO_MUL50=/workspace/fs_soya_db/kakao_refined/Multispeaker50
+KAKAO_MUL50=/workspace/mul50
 ################### KAKAO ####################
 
 ACCENTED_FR=downloads

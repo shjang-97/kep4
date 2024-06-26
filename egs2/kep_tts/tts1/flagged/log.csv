@@ -1,0 +1,5 @@
+text,Speaker,Pitch control,Speed control,Volume control,output,flag,username,timestamp
+"안녕하세요, 카카오엔터프라이즈 음성합성 모델 테스트입니다.",성인_여자_1,0,1x,50,flagged/output/43ac33bc7be19eb1fdae/output.wav,,,2024-06-18 09:47:28.484550
+담임 선생님의 담당과목은 화학과목이다.,성인_여자_2,0,1x,50,flagged/output/e41f45ce9dece43b2c8b/output.wav,,,2024-06-19 04:42:47.885888
+가나다,성인_여자_0,0,,50,,,,2024-06-20 01:36:50.406000
+"안녕하세요, 카카오엔터프라이즈 음성합성 모델 테스트입니다.",성인_여자_0,0,1x,50,flagged/output/66d5766de6ea337053d1/output.wav,,,2024-06-25 02:04:32.688300

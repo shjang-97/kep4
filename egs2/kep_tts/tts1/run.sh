@@ -38,14 +38,14 @@ inference_config=
 token_type=phn
 
 # g2p=g2pk
-g2p=g2pk_no_space  # No word sparator
+g2p=g2pk_explicit_space 
 
 # Default settings for non-vits models
 tts_task=gan_tts
 feats_extract=fbank
 feats_normalize=global_mvn
 
-expdir=exp_mul50_ying
+expdir=exp_vae #_mul50
 
 ./tts.sh \
     --tts_task "${tts_task}" \

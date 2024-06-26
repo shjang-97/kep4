@@ -19,7 +19,7 @@ stop_stage=2
 text_format=raw
 threshold=35
 nj=32
-g2p=g2pk_no_space
+# g2p=g2pk_explicit_space 
 
 log "$0 $*"
 # shellcheck disable=SC1091

@@ -38,7 +38,9 @@ dev_data_dirs=""
 eval_data_dirs=""
 
 # 스피커 ID 목록 (폴더 이름으로 구분)
-spks=$(find "${db}/wav24" -maxdepth 1 -exec basename {} \; | sort | grep -v wav24)
+# spks=$(find "${db}/wav24" -maxdepth 1 -exec basename {} \; | sort | grep -v wav24)
+# 스피커 ID 목록 (폴더 이름으로 구분)
+spks=$(find "${db}/wav24" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort -f)
 
 for spk in ${spks}; do
     [ ! -e data/${spk}_train ] && mkdir -p data/${spk}_train
@@ -62,7 +64,7 @@ for spk in ${spks}; do
         filename=$(basename "${wav}" | sed -e "s/\.[^\.]*$//g")  # 파일 이름 (확장자 x)
 
         spktxt=${db}/transcripts/${spk}_script.txt  # 화자 별 script
-        txt=$(grep "${filename}" "${spktxt}" | awk -F'	' '{print $2}')  # 공백 기준으로 뒤에 있는 글이 text
+        txt=$(grep "${filename}" "${spktxt}" | awk -F'|' '{print $2}')  # 공백 기준으로 뒤에 있는 글이 text
         if [ -z "${txt}" ]; then
             echo "${filename} does not have a text. skipped."
             continue
@@ -75,6 +77,9 @@ for spk in ${spks}; do
         utils/utt2spk_to_spk2utt.pl "${utt2spk}" > "${spk2utt}"           # 4. spk2utt
     done
 
+    # Sort utt2spk by speaker-id and then by utterance-id
+    sort -k2,2 -k1,1 "${utt2spk}" -o "${utt2spk}"
+    utils/utt2spk_to_spk2utt.pl "${utt2spk}" > "${spk2utt}"
 
     # 5. segments
     tempdata=data/${spk}_train

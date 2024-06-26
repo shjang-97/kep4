@@ -37,6 +37,7 @@ egs*/*/*/downloads
 egs*/*/*/dump
 egs*/*/*/enhan
 egs*/*/*/exp
+egs*/*/*/exp_vae
 egs*/*/*/fbank
 egs*/*/*/mfcc
 egs*/*/*/stft

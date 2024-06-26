@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package texttowav;
+
+// WAV 파일 데이터를 위한 메시지
+message WavResponse {
+  bytes wav_file = 1; // WAV 파일의 바이너리 데이터
+}
+
+// 텍스트 입력을 위한 메시지
+message TextRequest {
+  string text = 1; // 사용자로부터 입력 받은 텍스트
+  int32 sid = 2; // 발화자 식별자 (양의 정수)
+  int32 ctrl_pitch = 3; // 피치 제어 (-10에서 10까지의 범위, 정수, 0 포함)
+  float ctrl_speed = 4; // 스피드 제어 
+  float ctrl_loudness = 5; // 볼륨 
+}
+
+// 서비스 정의
+service TextToWavService {
+  rpc ConvertTextToWav(TextRequest) returns (WavResponse);
+}
+
+// 컴파일 : python -m grpc_tools.protoc --python_out=. --grpc_python_out=. --proto_path=. ./service.proto
+

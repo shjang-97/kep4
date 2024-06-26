@@ -1,6 +1,3 @@
-# Copyright 2022 Dan Lim
-#  Apache 2.0  (http://www.apache.org/licenses/LICENSE-2.0)
-
 """Generator module in JETS."""
 
 import logging
@@ -17,8 +14,11 @@ from espnet2.gan_tts.jets.alignments import (
     viterbi_decode,
 )
 from espnet2.gan_tts.jets.length_regulator import GaussianUpsampling
+from espnet2.gan_tts.jets.mlpmixer import MLPMixer
+from espnet2.gan_tts.jets.vae import VQVAE
 from espnet2.gan_tts.utils import get_random_segments
 from espnet2.torch_utils.initialize import initialize
+from espnet2.gan_tts.vits.text_encoder import TextEncoder
 from espnet2.tts.fastspeech2.variance_predictor import VariancePredictor
 from espnet2.tts.gst.style_encoder import StyleEncoder
 from espnet.nets.pytorch_backend.conformer.encoder import Encoder as ConformerEncoder
@@ -256,7 +256,7 @@ class JETSGenerator(torch.nn.Module):
         self.stop_gradient_from_pitch_predictor = stop_gradient_from_pitch_predictor
         self.stop_gradient_from_energy_predictor = stop_gradient_from_energy_predictor
         self.use_scaled_pos_enc = use_scaled_pos_enc
-        self.use_gst = use_gst
+        self.residual = True 
 
         # use idx 0 as padding idx
         self.padding_idx = 0
@@ -294,6 +294,7 @@ class JETSGenerator(torch.nn.Module):
         encoder_input_layer = torch.nn.Embedding(
             num_embeddings=idim, embedding_dim=adim, padding_idx=self.padding_idx
         )
+        
         if encoder_type == "transformer":
             self.encoder = TransformerEncoder(
                 idim=idim,
@@ -337,20 +338,25 @@ class JETSGenerator(torch.nn.Module):
         else:
             raise ValueError(f"{encoder_type} is not supported.")
 
-        # define GST
-        if self.use_gst:
-            self.gst = StyleEncoder(
-                idim=odim,  # the input is mel-spectrogram
-                gst_tokens=gst_tokens,
-                gst_token_dim=adim,
-                gst_heads=gst_heads,
-                conv_layers=gst_conv_layers,
-                conv_chans_list=gst_conv_chans_list,
-                conv_kernel_size=gst_conv_kernel_size,
-                conv_stride=gst_conv_stride,
-                gru_layers=gst_gru_layers,
-                gru_units=gst_gru_units,
-            )
+        if self.residual:
+            # self.style = StyleEncoder(
+            #     idim=odim,  # the input is mel-spectrogram
+            #     gst_tokens=gst_tokens,
+            #     gst_token_dim=adim,
+            #     gst_heads=gst_heads,
+            #     conv_layers=gst_conv_layers,
+            #     conv_chans_list=gst_conv_chans_list,
+            #     conv_kernel_size=gst_conv_kernel_size,
+            #     conv_stride=gst_conv_stride,
+            #     gru_layers=gst_gru_layers,
+            #     gru_units=gst_gru_units,
+            # )
+
+            self.style = VQVAE(input_dim=80,
+                               hidden_dim=512, 
+                               num_embeddings=512, 
+                               embedding_dim=256, 
+                               commitment_cost=0.25)
 
         # define spk and lang embedding
         self.spks = None
@@ -495,6 +501,11 @@ class JETSGenerator(torch.nn.Module):
             init_enc_alpha=init_enc_alpha,
             init_dec_alpha=init_dec_alpha,
         )
+        
+        # self.mlp = MLPMixer(
+        #     d_model=idim,
+        #     # seq_len=config.seq_len,
+        # )
 
     def forward(
         self,
@@ -557,19 +568,21 @@ class JETSGenerator(torch.nn.Module):
         # forward encoder
         x_masks = self._source_mask(text_lengths)
         hs, _ = self.encoder(text, x_masks)  # (B, T_text, adim)
+        # x, m_p, logs_p, x_mask = self.text_encoder(text, text_lengths)
 
-        # integrate with GST
-        if self.use_gst:
-            style_embs = self.gst(feats)
-            hs = hs + style_embs.unsqueeze(1)
-
-        # integrate with SID and LID embeddings
+        # integrate with SID
         if self.spks is not None:
             sid_embs = self.sid_emb(sids.view(-1))
             hs = hs + sid_embs.unsqueeze(1)
-        if self.langs is not None:
-            lid_embs = self.lid_emb(lids.view(-1))
-            hs = hs + lid_embs.unsqueeze(1)
+            
+        if self.residual:
+            # # gst
+            # style_embs = self.style(feats)
+            # hs = hs + style_embs.unsqueeze(1)
+            
+            # vae
+            vq_loss, style_embs, perplexity = self.style(feats)
+            hs = hs + style_embs * 0.1
 
         # integrate speaker embedding
         if self.spk_embed_dim is not None:
@@ -613,6 +626,8 @@ class JETSGenerator(torch.nn.Module):
         d_masks = make_non_pad_mask(text_lengths).to(ds.device)
         hs = self.length_regulator(hs, ds, h_masks, d_masks)  # (B, T_feats, adim)
 
+        #z, m_q, logs_q, y_mask = self.posterior_encoder(feats, feats_lengths, g=g)
+
         # forward decoder
         h_masks = self._source_mask(feats_lengths)
         zs, _ = self.decoder(hs, h_masks)  # (B, T_feats, adim)
@@ -637,8 +652,22 @@ class JETSGenerator(torch.nn.Module):
             ps,
             e_outs,
             es,
+            vq_loss * 0.1, # 출력
         )
-
+        
+    def interpolate(self, zs, factor):
+            """
+            zs 값을 주어진 factor에 따라 보간합니다.
+            :param zs: 원본 zs 값 (B, T_feats, adim)
+            :param factor: 속도 조절 인자 (2배속일 경우 2, 0.5배속일 경우 0.5)
+            :return: 보간된 zs 값
+            """
+            B, T_feats, adim = zs.shape
+            T_new = int(T_feats * factor)
+            zs = zs.unsqueeze(1)  # (B, 1, T_feats, adim)
+            zs_interpolated = F.interpolate(zs, size=(T_new, adim), mode='bilinear', align_corners=False)
+            return zs_interpolated.squeeze(1)  # (B, T_new, adim)
+        
     def inference(
         self,
         text: torch.Tensor,
@@ -651,6 +680,9 @@ class JETSGenerator(torch.nn.Module):
         spembs: Optional[torch.Tensor] = None,
         lids: Optional[torch.Tensor] = None,
         use_teacher_forcing: bool = False,
+        ctrl_pitch: float = None,
+        ctrl_speed: float = None,
+        ctrl_loudness: float = None,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Run inference.
 
@@ -674,11 +706,13 @@ class JETSGenerator(torch.nn.Module):
         # forward encoder
         x_masks = self._source_mask(text_lengths)
         hs, _ = self.encoder(text, x_masks)  # (B, T_text, adim)
+        
 
-        # integrate with GST
-        if self.use_gst:
-            style_embs = self.gst(feats)
-            hs = hs + style_embs.unsqueeze(1)
+        if self.residual:
+            # style_embs = self.style(feats)
+            # hs = hs + style_embs.unsqueeze(1)
+            vq_loss, style_embs, perplexity = self.style(feats)
+            hs = hs + style_embs * 0.1
 
         # integrate with SID and LID embeddings
         if self.spks is not None:
@@ -715,6 +749,15 @@ class JETSGenerator(torch.nn.Module):
             e_outs = self.energy_predictor(hs, h_masks.unsqueeze(-1))
             d_outs = self.duration_predictor.inference(hs, h_masks)
 
+
+        if ctrl_pitch is not None:
+            p_outs = p_outs + ctrl_pitch
+            
+        # if ctrl_loudness is not None:
+        #     e_outs = e_outs + ctrl_loudness
+
+
+            
         p_embs = self.pitch_embed(p_outs.transpose(1, 2)).transpose(1, 2)
         e_embs = self.energy_embed(e_outs.transpose(1, 2)).transpose(1, 2)
         hs = hs + e_embs + p_embs
@@ -732,11 +775,20 @@ class JETSGenerator(torch.nn.Module):
             h_masks = self._source_mask(feats_lengths)
         else:
             h_masks = None
+        
+        
+        if ctrl_speed is not None:
+            # d_outs = d_outs * ctrl_speed
+            # d_outs = torch.round(d_outs)
+            hs = self.interpolate(hs, ctrl_speed)
+        
         zs, _ = self.decoder(hs, h_masks)  # (B, T_feats, adim)
 
         # forward generator
         wav = self.generator(zs.transpose(1, 2))
 
+        if ctrl_loudness is not None:
+            wav = wav * ctrl_loudness
         return wav.squeeze(1), d_outs
 
     def _integrate_with_spk_embed(

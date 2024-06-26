@@ -84,9 +84,10 @@ class LogMelFbank(AbsFeatsExtract):
     def forward(
         self, input: torch.Tensor, input_lengths: torch.Tensor = None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # if input.dim() == 1:
+        #     input = input.unsqueeze(0)
         # 1. Domain-conversion: e.g. Stft: time -> time-freq
         input_stft, feats_lens = self.stft(input, input_lengths)
-
         assert input_stft.dim() >= 4, input_stft.shape
         # "2" refers to the real/imag parts of Complex
         assert input_stft.shape[-1] == 2, input_stft.shape

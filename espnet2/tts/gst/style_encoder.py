@@ -87,7 +87,6 @@ class StyleEncoder(torch.nn.Module):
         """
         ref_embs = self.ref_enc(speech)
         style_embs = self.stl(ref_embs)
-
         return style_embs
 
 

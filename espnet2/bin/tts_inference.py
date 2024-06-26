@@ -154,6 +154,9 @@ class Text2Speech:
         sids: Union[torch.Tensor, np.ndarray] = None,
         lids: Union[torch.Tensor, np.ndarray] = None,
         decode_conf: Optional[Dict[str, Any]] = None,
+        ctrl_pitch: float = None,
+        ctrl_speed: float = None,
+        ctrl_loudness: float = None,
     ) -> Dict[str, torch.Tensor]:
         """Run text-to-speech."""
         assert check_argument_types()
@@ -168,12 +171,19 @@ class Text2Speech:
         if self.use_spembs and spembs is None:
             raise RuntimeError("Missing required argument: 'spembs'")
 
+        # feats = None
+        # if self.feats_extract is not None:
+        #     feats, _ = self.feats_extract(
+        #         speech,
+        #     )
         # prepare batch
         if isinstance(text, str):
             text = self.preprocess_fn("<dummy>", dict(text=text))["text"]
         batch = dict(text=text)
         if speech is not None:
             batch.update(speech=speech)
+        # if feats is not None:
+        #     batch.update(feats=feats)
         if durations is not None:
             batch.update(durations=durations)
         if spembs is not None:
@@ -182,6 +192,16 @@ class Text2Speech:
             batch.update(sids=sids)
         if lids is not None:
             batch.update(lids=lids)
+        
+        if ctrl_pitch is not None:
+            batch.update(ctrl_pitch=ctrl_pitch)
+        if ctrl_loudness is not None:
+            batch.update(ctrl_loudness=ctrl_loudness)
+        if ctrl_speed is not None:
+            batch.update(ctrl_speed=ctrl_speed)
+            
+            
+            
         batch = to_device(batch, self.device)
 
         # overwrite the decode configs if provided
@@ -382,10 +402,11 @@ def inference(
     )
 
     # 3. Build data-iterator
-    if not text2speech.use_speech:
-        data_path_and_name_and_type = list(
-            filter(lambda x: x[1] != "speech", data_path_and_name_and_type)
-        )
+    # if not text2speech.use_speech:
+    #     data_path_and_name_and_type = list(
+    #         filter(lambda x: x[1] != "speech", data_path_and_name_and_type)
+    #     )
+
     loader = TTSTask.build_streaming_iterator(
         data_path_and_name_and_type,
         dtype=dtype,
@@ -397,6 +418,7 @@ def inference(
         allow_variable_data_keys=allow_variable_data_keys,
         inference=True,
     )
+
 
     # 6. Start for-loop
     output_dir = Path(output_dir)
@@ -437,10 +459,8 @@ def inference(
             # Change to single sequence and remove *_length
             # because inference() requires 1-seq, not mini-batch.
             batch = {k: v[0] for k, v in batch.items() if not k.endswith("_lengths")}
-
             start_time = time.perf_counter()
             output_dict = text2speech(**batch)
-
             key = keys[0]
             insize = next(iter(batch.values())).size(0) + 1
             if output_dict.get("feat_gen") is not None:
@@ -462,6 +482,7 @@ def inference(
                 if output_dict.get("feat_gen_denorm") is not None:
                     denorm_writer[key] = output_dict["feat_gen_denorm"].cpu().numpy()
             else:
+                print("4")
                 # end-to-end text2wav model case
                 wav = output_dict["wav"]
                 logging.info(
@@ -478,7 +499,7 @@ def inference(
                     + " ".join(map(str, output_dict["duration"].long().cpu().numpy()))
                     + "\n"
                 )
-
+            print("5")
             if output_dict.get("focus_rate") is not None:
                 focus_rate_writer.write(
                     f"{key} {float(output_dict['focus_rate']):.5f}\n"
@@ -515,7 +536,7 @@ def inference(
                 fig.set_tight_layout({"rect": [0, 0.03, 1, 0.95]})
                 fig.savefig(output_dir / f"att_ws/{key}.png")
                 fig.clf()
-
+            print("6")
             if output_dict.get("prob") is not None:
                 # Plot stop token prediction
                 prob = output_dict["prob"].cpu().numpy()
@@ -541,7 +562,7 @@ def inference(
                     text2speech.fs,
                     "PCM_16",
                 )
-
+    print("7")
     # remove files if those are not included in output dict
     if output_dict.get("feat_gen") is None:
         shutil.rmtree(output_dir / "norm")
