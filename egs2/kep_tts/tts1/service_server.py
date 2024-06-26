@@ -48,7 +48,7 @@ class TextToWavServiceImpl(service_pb2_grpc.TextToWavServiceServicer):
         ctrl_loudness = request.ctrl_loudness
         
         # refer
-        speech, _ = sf.read('/workspace/TTS/sample/' + str(sid) + '.wav')
+        speech, _ = sf.read('/workspace/TTS/KEP_TTS/sample/' + str(sid) + '.wav')
         speech = np.array(speech, dtype=np.float32)
         speech_tensor = torch.from_numpy(speech)
         
